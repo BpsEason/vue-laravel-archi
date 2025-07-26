@@ -500,14 +500,39 @@ volumes:
    - 新增 Prometheus + Grafana 監控容器性能。
    - 若需其他非同步任務，考慮恢復 Redis 佇列或使用 Laravel Horizon。
 
-## 常見問題
+## 問與答
 
-- **容器啟動失敗**？
-  - 檢查 `backend/.env` 是否有正確的 `APP_KEY` 和 `JWT_SECRET`。
-  - 確保 Docker 記憶體充足（至少 4GB）。
-- **圖片上傳失敗**？
-  - 查看 `image-worker` 容器日誌，確認 gRPC 服務運行正常。
-  - 檢查 `backend_storage_public` 卷的權限。
-- **API 返回 401**？
-  - 確認 JWT token 是否有效，必要時重新登入或刷新 token。
+以下是開發者在使用本專案時可能遇到的問題及解答，幫助快速設置和除錯。
 
+- **Q1: 容器啟動失敗怎麼辦？**
+  - **答**：檢查 `backend/.env` 是否有正確的 `APP_KEY` 和 `JWT_SECRET`。可用 `docker exec vue-laravel-archi-backend php artisan key:generate` 和 `php artisan jwt:secret` 生成。確認 Docker 記憶體充足：`docker system df` 檢查資源使用量。若 MySQL 連線失敗，檢查 `docker-compose.yml` 的 `MYSQL_ROOT_PASSWORD` 是否與 `.env` 的 `DB_PASSWORD` 一致。
+
+- **Q2: 圖片上傳失敗怎麼檢查？**
+  - **答**：先查看 gRPC 服務日誌：`docker logs vue-laravel-archi-image-worker`，確認 `image-worker` 是否正常運行。檢查 `backend_storage_public` 卷權限：`docker exec vue-laravel-archi-backend ls -l /var/www/html/backend/storage/app/public`。確保 `ImageProcessorImplementation.php` 的 `Storage` Facade 能寫入檔案。若問題持續，檢查 `backend/.env` 的 `IMAGE_GRPC_HOST` 和 `IMAGE_GRPC_PORT`。
+
+- **Q3: API 返回 401 錯誤怎麼處理？**
+  - **答**：401 表示 JWT token 無效或過期。檢查 `frontend-admin/src/stores/auth.js` 的 token 刷新邏輯，確保 `refreshToken` 方法正常運作。手動測試登入：`curl -X POST http://localhost/api/admin/login -d '{"email":"admin@example.com","password":"password"}'`，取得新 token。若後端問題，確認 `AuthController.php` 的 JWT 配置和 `backend/.env` 的 `JWT_SECRET`。
+
+- **Q4: 為什麼用 gRPC 處理圖片，而不是直接在 Laravel 裡做？**
+  - **答**：gRPC 使用 HTTP/2 和 Protocol Buffers，性能比傳統 HTTP API 高，適合內部高頻任務。在本專案中，`image-worker` 服務（`ImageProcessorImplementation.php`）將圖片轉為 WebP，與 Laravel 主應用分離，降低主服務負載。透過 `image.proto` 定義接口，確保型別安全。相比直接在 Laravel 處理，gRPC 提供更好的模組化和效能。
+
+- **Q5: 如何新增其他非同步任務？**
+  - **答**：目前圖片處理用 gRPC，但其他非同步任務可利用 Redis 佇列。在 `docker-compose.yml` 新增 `queue` 服務：`command: php /var/www/html/backend/artisan queue:work --daemon`，並在 `backend/.env` 設置 `QUEUE_CONNECTION=redis`。或者使用 Laravel Horizon，安裝後執行 `php artisan horizon`。任務邏輯可寫在 `app/Jobs/` 目錄下，參考 Laravel 文件。
+
+- **Q6: 如何為專案加入 HTTPS？**
+  - **答**：無 HTTPS 僅適合開發環境，生產環境需加入 SSL。編輯 `docker/nginx/default.conf`，新增 443 端口和 SSL 配置：
+    ```nginx
+    server {
+        listen 80;
+        listen 443 ssl;
+        ssl_certificate /etc/nginx/ssl/cert.pem;
+        ssl_certificate_key /etc/nginx/ssl/key.pem;
+        ...
+    }
+    ```
+    在 `docker-compose.yml` 新增 `certbot` 服務生成 Let’s Encrypt 證書，或使用自簽證書（開發用）。詳見 Let’s Encrypt 文件。
+
+## 聯絡方式
+
+有問題請聯繫：<your-email@example.com>。  
+維護：內部工程團隊
