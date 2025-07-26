@@ -1,0 +1,20 @@
+syntax = "proto3";
+
+package ImageProcessor; // 定義包名
+
+// 服務定義
+service ImageProcessor {
+  // 定義一個處理圖片的 RPC 方法
+  rpc ProcessImage (ImageRequest) returns (ImageResponse);
+}
+
+// 請求消息
+message ImageRequest {
+  bytes image_data = 1; // 圖片的二進制數據
+  string filename = 2; // 原始文件名
+}
+
+// 響應消息
+message ImageResponse {
+  string image_url = 1; // 處理後圖片的 URL
+}

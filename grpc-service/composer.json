@@ -1,0 +1,32 @@
+{
+    "name": "your-org/image-grpc-worker",
+    "description": "A gRPC service for image processing.",
+    "type": "project",
+    "require": {
+        "php": ">=8.1",
+        "spiral/roadrunner": "^2.10 || ^3.0",
+        "spiral/roadrunner-grpc": "^2.10 || ^3.0",
+        "google/protobuf": "^3.23",
+        "grpc/grpc": "^1.40",
+        "intervention/image": "^2.7",
+        "illuminate/support": "^10.0 || ^11.0",
+        "illuminate/filesystem": "^10.0 || ^11.0"
+    },
+    "autoload": {
+        "psr-4": {
+            "Grpc\\ImageProcessor\\": "src/Grpc/ImageProcessor/",
+            "Grpc\\ImageProcessor\\Services\\": "src/Services/"
+        },
+        "files": [
+            "src/support_laravel_facades.php" # 引入 Laravel Facade 支援
+        ]
+    },
+    "scripts": {
+        "proto:generate": "protoc --proto_path=./proto --php_out=src/Grpc/ImageProcessor --grpc_out=src/Grpc/ImageProcessor --plugin=protoc-gen-grpc=$(which grpc_php_plugin) proto/image.proto"
+    },
+    "config": {
+        "allow-plugins": {
+            "php-http/discovery": true
+        }
+    }
+}

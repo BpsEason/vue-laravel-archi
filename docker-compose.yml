@@ -1,0 +1,123 @@
+version: '3.8'
+
+services:
+  # 前端構建服務
+  frontend:
+    build:
+      context: .
+      dockerfile: docker/frontend/Dockerfile
+    container_name: vue-laravel-archi-frontend-builder
+    volumes:
+      - ./frontend-admin:/app/frontend-admin 
+      - frontend_dist:/app/frontend-admin/dist 
+    command: ["npm", "run", "build"]
+    restart: "no"
+
+  # 後端應用服務 (包含 PHP-FPM 和 Nginx)
+  backend:
+    build:
+      context: .
+      dockerfile: docker/php/Dockerfile
+    container_name: vue-laravel-archi-backend
+    volumes:
+      - ./backend:/var/www/html/backend # Laravel 後端程式碼
+      - frontend_dist:/var/www/html/frontend-admin/dist 
+      - ./docker/nginx/default.conf:/etc/nginx/conf.d/default.conf 
+      - backend_storage_public:/var/www/html/backend/storage/app/public # 持久化圖片儲存 (共享卷)
+
+    ports:
+      - "80:80"   # 只映射 HTTP 端口
+
+    env_file:
+      - ./backend/.env
+
+    environment:
+      - APP_ENV=production
+      - APP_DEBUG=false
+      - DB_HOST=mysql # 指向 MySQL 服務
+      - REDIS_HOST=redis
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
+      - JWT_SECRET=${JWT_SECRET}
+      - IMAGE_GRPC_HOST=image-worker # 指向 gRPC 服務的內部 Docker 網路名稱
+      - IMAGE_GRPC_PORT=50051
+
+    depends_on:
+      - frontend 
+      - redis    
+      - mysql      # 新增依賴 MySQL 服務
+      - image-worker # 新增依賴 gRPC 圖片處理服務
+
+    command: >
+      sh -c "
+      cd /var/www/html/backend && 
+      composer install --no-dev --optimize-autoloader && 
+      php artisan optimize && 
+      php artisan migrate --force && # 執行資料庫遷移
+      php artisan storage:link && 
+      php-fpm -D && # 後台運行 PHP-FPM
+      # php artisan queue:work --daemon & # 如果沒有其他佇列任務，可以移除此行
+      nginx -g 'daemon off;' # 前台運行 Nginx，保持容器活動
+      "
+    restart: always
+
+  # MySQL 資料庫服務
+  mysql:
+    image: mysql:8.0
+    container_name: vue-laravel-archi-mysql
+    ports:
+      - "3306:3306" # 可選：暴露 MySQL 端口到宿主機
+    environment:
+      MYSQL_ROOT_PASSWORD: root_password # 替換為您的 root 密碼
+      MYSQL_DATABASE: laravel_vue_db
+      MYSQL_USER: laravel_user
+      MYSQL_PASSWORD: laravel_password
+    volumes:
+      - mysql_data:/var/lib/mysql # 持久化 MySQL 資料
+    command: --default-authentication-plugin=mysql_native_password
+    restart: always
+
+  # Redis 服務
+  redis:
+    image: redis:7-alpine 
+    container_name: vue-laravel-archi-redis
+    ports:
+      - "6379:6379" # 可選：暴露 Redis 端口到宿主機
+    volumes:
+      - redis_data:/data # 持久化 Redis 資料
+    command: redis-server --appendonly yes
+    restart: always
+
+  # gRPC Image Worker 服務
+  image-worker:
+    build:
+      context: .
+      dockerfile: docker/grpc/Dockerfile # 使用 gRPC 服務的 Dockerfile
+    container_name: vue-laravel-archi-image-worker
+    volumes:
+      - ./grpc-service:/app/grpc-service # 掛載 gRPC 服務程式碼
+      # 共享圖片儲存卷，讓 gRPC worker 可以寫入，Nginx 可以讀取
+      - backend_storage_public:/var/www/html/backend/storage/app/public 
+    ports:
+      - "50051:50051" # 暴露 gRPC 服務端口
+    env_file:
+      - ./backend/.env # 使用 backend 的 .env 來獲取 APP_URL 等配置
+    environment:
+      - APP_ENV=production
+      - APP_DEBUG=false
+      - APP_URL=http://localhost # 確保在 gRPC worker 中也能正確構建 URL
+      # RoadRunner 的 gRPC 監聽端口配置
+      - RR_GRPC_LISTEN=tcp://0.0.0.0:50051
+      # 如果 image-worker 內部也需要 Redis，則需要指向
+      - REDIS_HOST=redis 
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
+    depends_on:
+      - redis # 假設 gRPC worker 內部可能也需要 Redis
+    command: ["rr", "serve", "-c", ".rr.yaml", "--debug"] # 啟動 RoadRunner gRPC server
+    restart: always
+
+# 定義具名卷
+volumes:
+  frontend_dist:
+  redis_data:
+  mysql_data: # 新增 MySQL 資料卷
+  backend_storage_public: # 新增用於共享 Laravel public 儲存的卷
