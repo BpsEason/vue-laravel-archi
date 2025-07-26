@@ -531,8 +531,3 @@ volumes:
     }
     ```
     在 `docker-compose.yml` 新增 `certbot` 服務生成 Let’s Encrypt 證書，或使用自簽證書（開發用）。詳見 Let’s Encrypt 文件。
-
-## 聯絡方式
-
-有問題請聯繫：<your-email@example.com>。  
-維護：內部工程團隊
